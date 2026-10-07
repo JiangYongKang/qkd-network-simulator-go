@@ -19,6 +19,12 @@ const (
 	ReasonConfirmationFailed
 	ReasonUntrustedNode
 	ReasonParamMismatch
+	// ReasonHandshakeMismatch 逐跳握手凭据或参数不一致。
+	ReasonHandshakeMismatch
+	// ReasonLinkUnavailable 本次尝试时链路不可用（切换/重试场景）。
+	ReasonLinkUnavailable
+	// ReasonNoUsablePath 所有候选路径都不可用或不可信。
+	ReasonNoUsablePath
 )
 
 func (r RejectReason) String() string {
@@ -39,6 +45,12 @@ func (r RejectReason) String() string {
 		return "untrusted-node"
 	case ReasonParamMismatch:
 		return "param-mismatch"
+	case ReasonHandshakeMismatch:
+		return "handshake-mismatch"
+	case ReasonLinkUnavailable:
+		return "link-unavailable"
+	case ReasonNoUsablePath:
+		return "no-usable-path"
 	}
 	return "unknown"
 }
