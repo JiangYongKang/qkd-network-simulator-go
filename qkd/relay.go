@@ -17,11 +17,15 @@ type Node struct {
 	ExpectedChannel ChannelParams
 }
 
-// LinkResult 记录一条链路的 BB84 结果。
+// LinkResult 记录一条链路的 BB84 结果与握手凭据。
 type LinkResult struct {
 	From  string
 	To    string
 	Round RoundResult
+	// FwdTag / BwdTag 是逐跳转发时用链路密钥对握手消息计算的
+	// HMAC 凭据，供事后逐跳核验复算比对。
+	FwdTag []byte
+	BwdTag []byte
 }
 
 // RelayResult 是多跳中继的最终结果。
@@ -32,6 +36,10 @@ type RelayResult struct {
 	Key    []byte
 	Links  []LinkResult
 	Detail string
+	// HandshakeFwd / HandshakeBwd 是端到端握手消息（端点 DH 公开值），
+	// 与每条链路的 FwdTag/BwdTag 一起构成逐跳核验的凭据。
+	HandshakeFwd []byte
+	HandshakeBwd []byte
 }
 
 // e2eKeyBytes 是端到端密钥的固定长度（字节）。
@@ -98,17 +106,28 @@ func RunRelay(nodes []Node, cfg RoundConfig, seed int64) RelayResult {
 	alicePriv, alicePub := dhGenerate(root.Derive("dh-alice"))
 	bobPriv, bobPub := dhGenerate(root.Derive("dh-bob"))
 
-	// 3. 公开值沿路径逐跳转发，每跳用链路密钥做 HMAC 认证。
-	if !relayMessage(alicePub.Bytes(), res.Links, true) {
+	// 3. 公开值沿路径逐跳转发，每跳用链路密钥做 HMAC 认证，
+	//    同时记录每跳的凭据供事后逐跳核验。
+	fwd := alicePub.Bytes()
+	bwd := bobPub.Bytes()
+	fwdTags := make([][]byte, nLinks)
+	if !relayMessage(fwd, res.Links, true, fwdTags) {
 		res.Reason = ReasonConfirmationFailed
 		res.Detail = "Alice 公开值转发认证失败"
 		return res
 	}
-	if !relayMessage(bobPub.Bytes(), res.Links, false) {
+	bwdTags := make([][]byte, nLinks)
+	if !relayMessage(bwd, res.Links, false, bwdTags) {
 		res.Reason = ReasonConfirmationFailed
 		res.Detail = "Bob 公开值转发认证失败"
 		return res
 	}
+	for i := range res.Links {
+		res.Links[i].FwdTag = fwdTags[i]
+		res.Links[i].BwdTag = bwdTags[i]
+	}
+	res.HandshakeFwd = fwd
+	res.HandshakeBwd = bwd
 
 	// 4. 端点各自计算共享秘密并导出端到端密钥。
 	sharedA := dhShared(bobPub, alicePriv)
@@ -132,8 +151,9 @@ func RunRelay(nodes []Node, cfg RoundConfig, seed int64) RelayResult {
 
 // relayMessage 模拟消息沿链路逐跳转发：每一跳由发送侧用链路密钥
 // 计算 HMAC，接收侧校验。forward 为 true 表示沿链路正序转发，
-// 否则逆序。任一跳校验失败返回 false。
-func relayMessage(msg []byte, links []LinkResult, forward bool) bool {
+// 否则逆序。任一跳校验失败返回 false。每跳的凭据写入 tags[i]，
+// 供事后逐跳核验复算比对。
+func relayMessage(msg []byte, links []LinkResult, forward bool, tags [][]byte) bool {
 	n := len(links)
 	for hop := 0; hop < n; hop++ {
 		i := hop
@@ -145,6 +165,7 @@ func relayMessage(msg []byte, links []LinkResult, forward bool) bool {
 		if !hmac.Equal(tag, linkTag(links[i].Round.Key, msg)) {
 			return false
 		}
+		tags[i] = tag
 	}
 	return true
 }

@@ -19,6 +19,12 @@ const (
 	ReasonConfirmationFailed
 	ReasonUntrustedNode
 	ReasonParamMismatch
+	// ReasonHopVerifyFailed 逐跳一致性核验未通过。
+	ReasonHopVerifyFailed
+	// ReasonLinkUnavailable 链路/路径当前不可用（切换重试场景）。
+	ReasonLinkUnavailable
+	// ReasonNoUsablePath 所有候选路径均不可信或不可用。
+	ReasonNoUsablePath
 )
 
 func (r RejectReason) String() string {
@@ -39,6 +45,12 @@ func (r RejectReason) String() string {
 		return "untrusted-node"
 	case ReasonParamMismatch:
 		return "param-mismatch"
+	case ReasonHopVerifyFailed:
+		return "hop-verify-failed"
+	case ReasonLinkUnavailable:
+		return "link-unavailable"
+	case ReasonNoUsablePath:
+		return "no-usable-path"
 	}
 	return "unknown"
 }
